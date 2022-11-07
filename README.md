@@ -47,6 +47,6 @@ Ensure you have installed the required dependencies using the Unity Package Mana
 
 Move the `FishNet` folder from this repository to the `Assets` folder in your Unity project.
 
-#### Add Transport
+### Add Transport
 
 Add the "FishyUTP" transport component to the "NetworkManager" game object. 
