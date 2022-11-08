@@ -10,7 +10,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <summary>
         /// Transport controlling this socket.
         /// </summary>
-        protected FishyUTP transport;
+        protected FishyUTP Transport;
 
         #region Connection States
         /// <summary>
@@ -32,17 +32,17 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <summary>
         /// Unity transport driver to send and receive data.
         /// </summary>
-        protected NetworkDriver driver;
+        protected NetworkDriver Driver;
 
         /// <summary>
         /// A pipeline on the driver that is sequenced, and ensures messages are delivered.
         /// </summary>
-        protected NetworkPipeline reliablePipeline;
+        protected NetworkPipeline ReliablePipeline;
 
         /// <summary>
         /// A pipeline on the driver that is sequenced, but does not ensure messages are delivered.
         /// </summary>
-        protected NetworkPipeline unreliablePipeline;
+        protected NetworkPipeline UnreliablePipeline;
         #endregion
         
         
@@ -52,7 +52,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="transport"></param>
         internal void Initialize(FishyUTP transport)
         {
-            this.transport = transport;
+            this.Transport = transport;
         }
         
         /// <summary>
@@ -69,11 +69,11 @@ namespace FishNet.Transporting.FishyUTPPlugin
             _connectionState = connectionState;
 
             if (server)
-                transport.HandleServerConnectionState(new ServerConnectionStateArgs(connectionState,
-                    transport.Index));
+                Transport.HandleServerConnectionState(new ServerConnectionStateArgs(connectionState,
+                    Transport.Index));
             else
-                transport.HandleClientConnectionState(new ClientConnectionStateArgs(connectionState,
-                    transport.Index));
+                Transport.HandleClientConnectionState(new ClientConnectionStateArgs(connectionState,
+                    Transport.Index));
         }
 
         /// <summary>
@@ -84,13 +84,13 @@ namespace FishNet.Transporting.FishyUTPPlugin
             var data = new NativeArray<byte>(segment.Count, Allocator.Persistent);
             NativeArray<byte>.Copy(segment.Array, segment.Offset, data, 0, segment.Count);
             
-            var writeStatus = driver.BeginSend(pipeline, connection, out var writer);
+            var writeStatus = Driver.BeginSend(pipeline, connection, out var writer);
 
             //If endpoint was success, write data to stream
             if (writeStatus != (int)StatusCode.Success) return;
             
             writer.WriteBytes(data);
-            driver.EndSend(writer);
+            Driver.EndSend(writer);
 
             data.Dispose();
         }
@@ -105,7 +105,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
             
             data = new ArraySegment<byte>(nativeMessage.ToArray());
             connectionId = connection.GetHashCode();
-            channel = pipeline == reliablePipeline ? Channel.Reliable : Channel.Unreliable;
+            channel = pipeline == ReliablePipeline ? Channel.Reliable : Channel.Unreliable;
 
             nativeMessage.Dispose();
         }
@@ -121,10 +121,10 @@ namespace FishNet.Transporting.FishyUTPPlugin
             {
                 if (channelId == 0)
                 {
-                    return driver.MaxHeaderSize(reliablePipeline);
+                    return Driver.MaxHeaderSize(ReliablePipeline);
                 }
 
-                return driver.MaxHeaderSize(unreliablePipeline);
+                return Driver.MaxHeaderSize(UnreliablePipeline);
             }
 
             return 0;

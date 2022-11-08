@@ -16,7 +16,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// </summary>
         [Tooltip("Port to use.")]
         [SerializeField]
-        public ushort port = 7777;
+        private ushort port = 7777;
         
         /// <summary>
         /// Maximum number of players which may be connected at once.
@@ -33,18 +33,39 @@ namespace FishNet.Transporting.FishyUTPPlugin
         [Tooltip("Address to connect.")]
         [SerializeField]
         private string clientAddress = "127.0.0.1";
+        
+        [Header("Relay")]
+        
+        /// <summary>
+        /// Whether to use Relay with UTP.
+        /// </summary>
+        [Tooltip("Automatically sign in to Unity services when transport is initialized?")]
+        [SerializeField]
+        public bool useRelay;
+        
+        /// <summary>
+        /// Automatically sign in to Unity services when transport is initialized.
+        /// </summary>
+        [Tooltip("Automatically sign in to Unity services when transport is initialized?")]
+        [SerializeField]
+        private bool loginToUnityServices = true;
+        
+        /// <summary>
+        /// Component to manage Unity Relay allocations.
+        /// </summary>
+        public FishyRelayManager relayManager;
         #endregion
 
         #region Private.
         /// <summary>
         /// Server for the transport.
         /// </summary>
-        private readonly UtpServer _server = new UtpServer();
+        private readonly UtpServer _server = new();
         
         /// <summary>
-        /// Server for the transport.
+        /// Client for the transport.
         /// </summary>
-        private readonly UtpClient _client = new UtpClient();
+        private readonly UtpClient _client = new();
         #endregion
         
         #region Initialization and unity.
@@ -57,8 +78,29 @@ namespace FishNet.Transporting.FishyUTPPlugin
             
             _server.Initialize(this);
             _client.Initialize(this);
+            
+            InitializeRelay();
         }
-        
+
+        private void InitializeRelay()
+        {
+            if (!useRelay) return;
+            
+            if (TryGetComponent(out relayManager))
+            {
+                relayManager.SetTransport(this);
+                if (loginToUnityServices)
+                {
+                    relayManager.LoginToUnityServices();
+                }
+            }
+            else
+            {
+                if (NetworkManager.CanLog(LoggingType.Error))
+                    Debug.LogError("Relay services will not function as the RelayAlloc component is not added.");
+            }
+        }
+
         private void OnDestroy()
         {
             Shutdown();
@@ -315,7 +357,10 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <returns>True if there were no blocks. A true response does not promise a socket will or has connected.</returns>
         private bool StartServer()
         {
-            return _server.StartConnection(port, maximumClients);
+            if (!useRelay) return _server.StartConnection(port, false);
+            
+            relayManager.CreateAllocation(maximumClients, _ => _server.StartConnection(port, true));
+            return true;
         }
 
         /// <summary>
@@ -340,6 +385,12 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 if (NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError("Client is already running.");
                 return false;
+            }
+
+            if (useRelay)
+            {
+                relayManager.GetJoinAllocation(() => _client.StartConnection(relayManager.ClientAllocation));
+                return true;
             }
 
             _client.StartConnection(address, port);

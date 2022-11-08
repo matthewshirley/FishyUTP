@@ -2,6 +2,7 @@
 using FishNet.Managing.Logging;
 using Unity.Collections;
 using Unity.Networking.Transport;
+using Unity.Networking.Transport.Relay;
 using UnityEngine;
 
 namespace FishNet.Transporting.FishyUTPPlugin
@@ -28,43 +29,54 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <summary>
         /// Starts the server.
         /// </summary>
-        public bool StartConnection(ushort port, int maximumClients)
+        public bool StartConnection(ushort port, bool useRelay)
         {
             if (GetLocalConnectionState() != LocalConnectionState.Stopped)
             {
-                if (transport.NetworkManager.CanLog(LoggingType.Error))
+                if (Transport.NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError("Attempting to start a server that is already active.");
                 return false;
             }
-
-            _maximumClients = maximumClients;
             
-            var settings = new NetworkSettings();
-            driver = NetworkDriver.Create(settings);
+            SetLocalConnectionState(LocalConnectionState.Starting, true);
             
-            reliablePipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-            unreliablePipeline = driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
-
             var endpoint = NetworkEndPoint.AnyIpv4;
             endpoint.Port = port;
+            
+            var settings = new NetworkSettings();
 
-            driver.Bind(endpoint);
-            if (!driver.Bound)
+            if (useRelay)
             {
-                if (transport.NetworkManager.CanLog(LoggingType.Error))
+                // Create the network parameters using the Relay server data
+                var relayServerData = RelaySupport.HostRelayData(Transport.relayManager.HostAllocation);
+                var relayNetworkParameter = new RelayNetworkParameter { ServerData = relayServerData };
+                
+                settings.AddRawParameterStruct(ref relayNetworkParameter);
+            }
+
+            Driver = NetworkDriver.Create(settings);
+
+            ReliablePipeline = Driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            UnreliablePipeline = Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
+            
+            // Bind the driver to the endpoint
+            Driver.Bind(endpoint);
+            if (!Driver.Bound)
+            {
+                if (Transport.NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError($"Unable to bind to the specified port {port}.");
+                
+                SetLocalConnectionState(LocalConnectionState.Stopped, true);
                 return false;
             }
 
-            SetLocalConnectionState(LocalConnectionState.Starting, true);
-
-            // Then we try to bind our driver to a specific network address and port, and if that does not fail, we call the Listen method.
-            driver.Listen();
-
-            // Finally we create a NativeList to hold all the connections.
+            // and start listening for new connections.
+            Driver.Listen();
+            SetLocalConnectionState(LocalConnectionState.Started, true);
+            
+            // Finally, create a NativeList to hold all the connections
             _connections = new NativeList<NetworkConnection>(16, Allocator.Persistent);
             
-            SetLocalConnectionState(LocalConnectionState.Started, true);
             return true;
         }
         
@@ -84,10 +96,10 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 _connections.Dispose();
             }
 
-            if (driver.IsCreated)
+            if (Driver.IsCreated)
             {
-                driver.Dispose();
-                driver = default;
+                Driver.Dispose();
+                Driver = default;
             }
 
             SetLocalConnectionState(LocalConnectionState.Stopped, true);
@@ -102,12 +114,12 @@ namespace FishNet.Transporting.FishyUTPPlugin
         {
             if (!GetConnection(connectionId, out var connection)) return true;
             
-            transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Stopped, connectionId, transport.Index));
+            Transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Stopped, connectionId, Transport.Index));
 
-            connection.Disconnect(driver);
+            connection.Disconnect(Driver);
             _connections.RemoveAt(_connections.IndexOf(connection));
 
-            driver.ScheduleUpdate().Complete();
+            Driver.ScheduleUpdate().Complete();
 
             return true;
         }
@@ -134,7 +146,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         {
             if (!GetConnection(connectionId, out var connection)) return string.Empty;
 
-            var endpoint = driver.RemoteEndPoint(connection);
+            var endpoint = Driver.RemoteEndPoint(connection);
             return endpoint.Address;
         }
 
@@ -171,7 +183,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         {
             if (!GetConnection(connectionId, out var connection)) return;
             
-            var pipeline = channelId == (int)Channel.Reliable ? reliablePipeline : unreliablePipeline;
+            var pipeline = channelId == (int)Channel.Reliable ? ReliablePipeline : UnreliablePipeline;
             Send(pipeline, connection, segment);
         }
 
@@ -186,7 +198,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
             
             // This method closely follows what is in the Unity transport documentation:
             // https://docs-multiplayer.unity3d.com/transport/current/minimal-workflow#server-update-loop
-            driver.ScheduleUpdate().Complete();
+            Driver.ScheduleUpdate().Complete();
             
             // Clean up connections
             for (var i = 0; i < _connections.Length; i++)
@@ -199,7 +211,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
             
             // Accept new connections
             NetworkConnection incomingConnection;
-            while ((incomingConnection = driver.Accept()) != default)
+            while ((incomingConnection = Driver.Accept()) != default)
             {
                 _connections.Add(incomingConnection);
 
@@ -209,20 +221,20 @@ namespace FishNet.Transporting.FishyUTPPlugin
                     return;
                 }
                 
-                transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Started, incomingConnection.GetHashCode(), transport.Index));
+                Transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Started, incomingConnection.GetHashCode(), Transport.Index));
             }
 
             foreach (var connection in _connections)
             {
                 NetworkEvent.Type netEvent;
-                while ((netEvent = driver.PopEventForConnection(connection, out var stream, out var pipeline)) !=
+                while ((netEvent = Driver.PopEventForConnection(connection, out var stream, out var pipeline)) !=
                        NetworkEvent.Type.Empty)
                 {
                     switch (netEvent)
                     {
                         case NetworkEvent.Type.Data:
                             Receive(stream, connection, pipeline, out var data, out var channel, out var connectionId);
-                            transport.HandleServerReceivedDataArgs(new ServerReceivedDataArgs(data, channel, connectionId, transport.Index));
+                            Transport.HandleServerReceivedDataArgs(new ServerReceivedDataArgs(data, channel, connectionId, Transport.Index));
                             break;
                         
                         case NetworkEvent.Type.Disconnect:
