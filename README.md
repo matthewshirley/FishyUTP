@@ -45,7 +45,7 @@ Ensure you have installed the required dependencies using the Unity Package Mana
    * Open the Unity Package Manager by navigating to Window > Package Manager
    * Click Add in the status bar.
    * Select "Add package via Git URL"
-   * Input the URL to this repository
+   * Input "https://github.com/matthewshirley/FishyUTP.git?path=/FishNet/Plugins/FishyUTP"
    * Click "Add" 
 
 #### Manual
