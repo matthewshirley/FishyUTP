@@ -24,7 +24,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         [Tooltip("Maximum number of players which may be connected at once.")]
         [Range(1, 9999)]
         [SerializeField]
-        private int maximumClients = 4095;
+        private int maximumClients = 16;
         
         [Header("Client")]
         /// <summary>
