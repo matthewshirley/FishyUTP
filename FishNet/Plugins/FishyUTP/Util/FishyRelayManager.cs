@@ -37,6 +37,33 @@ namespace FishNet.Transporting.FishyUTPPlugin
         private FishyUTP _transport;
         #endregion
 
+        #region Events
+        /// <summary>
+        /// Called when a Relay allocation is successfully allocated.
+        /// </summary>
+        public static event Action<Allocation> OnHostAllocationSuccess;
+        
+        /// <summary>
+        /// Called when a Relay allocation was unable to be allocated.
+        /// </summary>
+        public static event Action OnHostAllocationFailure;
+        
+        /// <summary>
+        /// Called when the join code is retrieved from an allocation.
+        /// </summary>
+        public static event Action<string> OnJoinCode;
+
+        /// <summary>
+        /// Called when a Relay join allocation could be allocated.
+        /// </summary>
+        public static event Action<JoinAllocation> OnJoinAllocationSuccess;
+        
+        /// <summary>
+        /// Called when a Relay join allocation could not be allocated.
+        /// </summary>
+        public static event Action OnJoinAllocationFailure;
+        #endregion
+
         #region Initialize
 
         public void SetTransport(FishyUTP transport)
@@ -89,10 +116,14 @@ namespace FishNet.Transporting.FishyUTPPlugin
             {
                 if (_transport.NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError("RelayService faulted when obtaining join allocation.");
+                
+                OnJoinAllocationFailure?.Invoke();
                 yield break;
             }
 
             ClientAllocation = allocationTask.Result;
+            
+            OnJoinAllocationSuccess?.Invoke(ClientAllocation);
             callback?.Invoke();
         }
         
@@ -120,11 +151,13 @@ namespace FishNet.Transporting.FishyUTPPlugin
             {
                 if (_transport.NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError("RelayService faulted when creating an allocation.");
+                
+                OnHostAllocationFailure?.Invoke();
                 yield break;
             }
             
             HostAllocation = allocationTask.Result;
-            Debug.Log($"Received allocation: {HostAllocation.AllocationId}");
+            OnHostAllocationSuccess?.Invoke(HostAllocation);
 
             StartCoroutine(GetJoinCodeTask(onAllocation));
         }
@@ -132,7 +165,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <summary>
         /// Task to obtain a join code for the host allocation.
         /// </summary>
-        private IEnumerator GetJoinCodeTask(Action<string> onJoinCode)
+        private IEnumerator GetJoinCodeTask(Action<string> callback)
         {
             var joinCodeTask = RelayService.Instance.GetJoinCodeAsync(HostAllocation.AllocationId);
 
@@ -149,7 +182,9 @@ namespace FishNet.Transporting.FishyUTPPlugin
             }
 
             joinCode = joinCodeTask.Result;
-            onJoinCode?.Invoke(joinCode);
+            
+            OnJoinCode?.Invoke(joinCode);
+            callback?.Invoke(joinCode);
         }
         #endregion
     }
