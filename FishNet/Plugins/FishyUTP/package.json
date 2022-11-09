@@ -1,0 +1,8 @@
+{
+  "name": "com.matthewshirley.fishyutp",
+  "displayName": "FishyUTP",
+  "version": "0.0.1",
+  "unity": "2020.3",
+  "description": "Unity Transport Package (UTP) for Fish-Networking. ",
+  "type": "library"
+}
