@@ -1,6 +1,8 @@
 ﻿using System;
 using FishNet.Managing.Logging;
 using Unity.Networking.Transport;
+using Unity.Networking.Transport.Relay;
+using Unity.Services.Relay.Models;
 using UnityEngine;
 
 namespace FishNet.Transporting.FishyUTPPlugin
@@ -16,6 +18,39 @@ namespace FishNet.Transporting.FishyUTPPlugin
         private NetworkConnection _connection;
         #endregion
 
+        private void InternalStartConnection(NetworkEndPoint endpoint, NetworkSettings settings)
+        {
+            SetLocalConnectionState(LocalConnectionState.Starting, false);
+            
+            Driver = NetworkDriver.Create(settings);
+            
+            ReliablePipeline = Driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
+            UnreliablePipeline = Driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
+
+            _connection = Driver.Connect(endpoint);
+            
+            SetLocalConnectionState(LocalConnectionState.Started, false);
+        }
+        
+        /// <summary>
+        /// Starts the client connection.
+        /// </summary>
+        /// <param name="allocation"></param>
+        internal void StartConnection(JoinAllocation allocation)
+        {
+            if (GetLocalConnectionState() == LocalConnectionState.Started || GetLocalConnectionState() == LocalConnectionState.Starting)
+            {
+                return;
+            }
+            
+            var settings = new NetworkSettings();
+            
+            var relayServerData = RelaySupport.PlayerRelayData(allocation);
+            settings.WithRelayParameters(ref relayServerData);
+            
+            InternalStartConnection(relayServerData.Endpoint, settings);
+        }
+        
         /// <summary>
         /// Starts the client connection.
         /// </summary>
@@ -23,27 +58,20 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="port"></param>
         internal void StartConnection(string address, ushort port)
         {
-            if (GetLocalConnectionState() == LocalConnectionState.Started)
+            if (GetLocalConnectionState() == LocalConnectionState.Started || GetLocalConnectionState() == LocalConnectionState.Starting)
             {
                 return;
             }
             
             if (!NetworkEndPoint.TryParse(address, port, out var endpoint))
             {
-                if (transport.NetworkManager.CanLog(LoggingType.Error))
+                if (Transport.NetworkManager.CanLog(LoggingType.Error))
                     Debug.LogError("Unable to parse listen server address and port.");
                 return;
             }
             
-            SetLocalConnectionState(LocalConnectionState.Starting, false);
-            
             var settings = new NetworkSettings();
-            driver = NetworkDriver.Create(settings);
-            
-            reliablePipeline = driver.CreatePipeline(typeof(ReliableSequencedPipelineStage));
-            unreliablePipeline = driver.CreatePipeline(typeof(UnreliableSequencedPipelineStage));
-
-            _connection = driver.Connect(endpoint);
+            InternalStartConnection(endpoint, settings);
         }
         
         /// <summary>
@@ -59,16 +87,16 @@ namespace FishNet.Transporting.FishyUTPPlugin
 
             if (_connection.IsCreated)
             {
-                _connection.Disconnect(driver);
+                _connection.Disconnect(Driver);
                 _connection = default;
             }
             
-            driver.ScheduleUpdate().Complete();
+            Driver.ScheduleUpdate().Complete();
 
-            if (driver.IsCreated)
+            if (Driver.IsCreated)
             {
-                driver.Dispose();
-                driver = default;
+                Driver.Dispose();
+                Driver = default;
             }
 
             SetLocalConnectionState(LocalConnectionState.Stopped, false);
@@ -83,17 +111,17 @@ namespace FishNet.Transporting.FishyUTPPlugin
             if (GetLocalConnectionState() == LocalConnectionState.Stopped || GetLocalConnectionState() == LocalConnectionState.Stopping)
                 return;
             
-            driver.ScheduleUpdate().Complete();
+            Driver.ScheduleUpdate().Complete();
             
             NetworkEvent.Type incomingEvent;
-            while ((incomingEvent = _connection.PopEvent(driver, out var stream, out var pipeline)) !=
+            while ((incomingEvent = _connection.PopEvent(Driver, out var stream, out var pipeline)) !=
                    NetworkEvent.Type.Empty)
             {
                 switch (incomingEvent)
                 {
                     case NetworkEvent.Type.Data:
                         Receive(stream, _connection, pipeline, out var data, out var channel, out _);
-                        transport.HandleClientReceivedDataArgs(new ClientReceivedDataArgs(data, channel, transport.Index));
+                        Transport.HandleClientReceivedDataArgs(new ClientReceivedDataArgs(data, channel, Transport.Index));
                         break;
                     case NetworkEvent.Type.Connect:
                         SetLocalConnectionState(LocalConnectionState.Started, false);
@@ -115,7 +143,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 return;
             }
             
-            var pipeline = channelId == (int) Channel.Reliable ? reliablePipeline : unreliablePipeline;
+            var pipeline = channelId == (int) Channel.Reliable ? ReliablePipeline : UnreliablePipeline;
             Send(pipeline, _connection, segment);
         }
     }

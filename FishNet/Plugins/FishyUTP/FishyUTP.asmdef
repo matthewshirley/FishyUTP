@@ -1,0 +1,21 @@
+﻿{
+    "name": "FishyUTP",
+    "rootNamespace": "",
+    "references": [
+        "FishNet.Runtime",
+        "Unity.Collections",
+        "Unity.Services.Authentication",
+        "Unity.Services.Core",
+        "Unity.Services.Relay",
+        "Unity.Networking.Transport"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
