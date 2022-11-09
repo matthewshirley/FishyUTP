@@ -1,9 +1,9 @@
 # FishyUTP
-A Unity Transport (UTP) implementation for Fish-Networking, a A feature-rich Unity networking solution aimed towards reliability, ease of use, efficiency, and flexibility.
+A Unity Transport (UTP) implementation for Fish-Net, a A feature-rich Unity networking solution aimed towards reliability, ease of use, efficiency, and flexibility.
 
 ## Need Help?
 
-- Chat in the [FishNet Discord](https://discord.gg/fishnetworking)
+- Chat in the [Fish-Net Discord](https://discord.gg/fishnetworking)
 
 ## Compatibility
 
@@ -17,7 +17,7 @@ The following is the anticipated features this library will support in the futur
 |-----------------| --------- |
 | Transport       | 🔨         |
 | Jobified        | ❌         |
-| Relay | ❌         |
+| Relay | 🔨         |
 
 - ✅ -- Implemented
 - 🔨 -- Partially implemented
@@ -30,8 +30,9 @@ The following is the anticipated features this library will support in the futur
 
 Ensure you have installed the required dependencies using the Unity Package Manager:
 
-* [FishNet](https://assetstore.unity.com/packages/tools/network/fish-net-networking-evolved-207815)
+* [Fish-Net: Networking Evolved](https://assetstore.unity.com/packages/tools/network/fish-net-networking-evolved-207815)
 * [com.unity.transport](https://docs-multiplayer.unity3d.com/transport/current/install) 
+* [com.unity.services.relay](https://docs.unity.com/relay/get-started.html)
 
 ### Install Transport
 
@@ -47,6 +48,17 @@ Ensure you have installed the required dependencies using the Unity Package Mana
 
 Move the `FishNet` folder from this repository to the `Assets` folder in your Unity project.
 
-### Add Transport
+#### Transport Component
 
 Add the "FishyUTP" transport component to the "NetworkManager" game object. 
+
+### Configure Relay
+
+FishyUTP supports creating and joining Unity Relay allocations to simplify and secure network connectivity. This is an optional feature that can be disable on FishyUTP transport ("Use Relay").
+
+* Add the "FishyUTP Relay Manager" component to the game object that contains the "FishyUTP" and "NetworkManager" component.
+* On the "FishyUTP" component:
+  * Enable "Use Relay"
+  * Enable "Login To Unity Services" if you are not already doing so elsewhere in your application
+
+The "Join Code" on the "FishyUTP Relay Manager" represents either the join code generated for the host allocation or the join allocation the client will attempt to connect to. 
