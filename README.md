@@ -3,7 +3,11 @@ A Unity Transport (UTP) implementation for Fish-Net, a A feature-rich Unity netw
 
 ## Need Help?
 
-- Chat in the [Fish-Net Discord](https://discord.gg/fishnetworking)
+This transport does not have first-party support and is a community maintained project.
+
+- Raise an [Issue](https://github.com/matthewshirley/FishyUTP/issues) or start a [Discussion](https://github.com/matthewshirley/FishyUTP/discussions) for questions or bugs regarding FishyUTP.
+- Create a [Pull Request](https://github.com/matthewshirley/FishyUTP/pulls) to propose a change or fix a bug.
+- Chat in the [Fish-Net Discord](https://discord.gg/fishnetworking) if you have questions about the Fish-Net library.
 
 ## Compatibility
 
