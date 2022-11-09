@@ -1,5 +1,5 @@
 # FishyUTP
-A Unity Transport (UTP) implementation for Fish-Net, a A feature-rich Unity networking solution aimed towards reliability, ease of use, efficiency, and flexibility.
+A Unity Transport (UTP) implementation for Fish-Net, a feature-rich Unity networking solution aimed towards reliability, ease of use, efficiency, and flexibility.
 
 ## Need Help?
 
