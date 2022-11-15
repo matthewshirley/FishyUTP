@@ -112,7 +112,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="connectionId"></param>
         internal bool StopConnection(int connectionId)
         {
-            if (!GetConnection(connectionId, out var connection)) return true;
+            if (!TryGetConnection(connectionId, out var connection)) return true;
             
             Transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Stopped, connectionId, Transport.Index));
 
@@ -124,7 +124,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
             return true;
         }
 
-        private bool GetConnection(int connectionId, out NetworkConnection connection)
+        private bool TryGetConnection(int connectionId, out NetworkConnection connection)
         {
             if (_connections.IsCreated)
             {
@@ -144,7 +144,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
 
         public string GetConnectionAddress(int connectionId)
         {
-            if (!GetConnection(connectionId, out var connection)) return string.Empty;
+            if (!TryGetConnection(connectionId, out var connection)) return string.Empty;
 
             var endpoint = Driver.RemoteEndPoint(connection);
             return endpoint.Address;
@@ -156,7 +156,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="connectionId">ConnectionId to get ConnectionState for.</param>
         internal RemoteConnectionState GetConnectionState(int connectionId)
         {
-            return !GetConnection(connectionId, out _) ? RemoteConnectionState.Stopped : RemoteConnectionState.Started;
+            return !TryGetConnection(connectionId, out _) ? RemoteConnectionState.Stopped : RemoteConnectionState.Started;
         }
 
         /// <summary>
@@ -179,37 +179,15 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <summary>
         /// Send data to a connection over a particular channel.
         /// </summary>
-        public void SendToClient(int channelId, ArraySegment<byte> segment, int connectionId)
+        public void SendToClient(int channelId, ArraySegment<byte> message, int connectionId)
         {
-            if (!GetConnection(connectionId, out var connection)) return;
-            
-            var pipeline = channelId == (int)Channel.Reliable ? ReliablePipeline : UnreliablePipeline;
-            Send(pipeline, connection, segment);
+            if (!TryGetConnection(connectionId, out var connection)) return;
+            Send(channelId, message, connection);
         }
 
-        /// <summary>
-        /// Iterates through all incoming packets and handles them.
-        /// </summary>
-        internal void IterateIncoming()
+
+        private void HandleIncomingConnections()
         {
-            //Stopped or trying to stop.
-            if (GetLocalConnectionState() == LocalConnectionState.Stopped || GetLocalConnectionState() == LocalConnectionState.Stopping)
-                return;
-            
-            // This method closely follows what is in the Unity transport documentation:
-            // https://docs-multiplayer.unity3d.com/transport/current/minimal-workflow#server-update-loop
-            Driver.ScheduleUpdate().Complete();
-            
-            // Clean up connections
-            for (var i = 0; i < _connections.Length; i++)
-            {
-                if (_connections[i].IsCreated) continue;
-                
-                _connections.RemoveAtSwapBack(i);
-                --i;
-            }
-            
-            // Accept new connections
             NetworkConnection incomingConnection;
             while ((incomingConnection = Driver.Accept()) != default)
             {
@@ -223,25 +201,53 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 
                 Transport.HandleRemoteConnectionState(new RemoteConnectionStateArgs(RemoteConnectionState.Started, incomingConnection.GetHashCode(), Transport.Index));
             }
+        }
 
-            foreach (var connection in _connections)
-            {
-                NetworkEvent.Type netEvent;
-                while ((netEvent = Driver.PopEventForConnection(connection, out var stream, out var pipeline)) !=
+        private void HandleIncomingEvents()
+        {
+            NetworkEvent.Type netEvent;
+            while ((netEvent = Driver.PopEvent(out var connection, out var stream, out var pipeline)) !=
                        NetworkEvent.Type.Empty)
+            {
+                switch (netEvent)
                 {
-                    switch (netEvent)
-                    {
-                        case NetworkEvent.Type.Data:
-                            Receive(stream, connection, pipeline, out var data, out var channel, out var connectionId);
-                            Transport.HandleServerReceivedDataArgs(new ServerReceivedDataArgs(data, channel, connectionId, Transport.Index));
-                            break;
-                        
-                        case NetworkEvent.Type.Disconnect:
-                            StopConnection(connection.GetHashCode());
-                            break;
-                    }
+                    case NetworkEvent.Type.Data:
+                        Receive(connection.GetHashCode(), pipeline, stream);
+                        break;
+                    
+                    case NetworkEvent.Type.Disconnect:
+                        StopConnection(connection.GetHashCode());
+                        break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Iterates through all incoming packets and handles them.
+        /// </summary>
+        internal void IterateIncoming()
+        {
+            if (GetLocalConnectionState() == LocalConnectionState.Stopped ||
+                GetLocalConnectionState() == LocalConnectionState.Stopping)
+                return;
+
+            Driver.ScheduleUpdate().Complete();
+
+            HandleIncomingConnections();
+            HandleIncomingEvents();
+        }
+
+        /// <summary>
+        /// Processes data to be sent by the socket.
+        /// </summary>
+        internal void IterateOutgoing()
+        {
+            if (GetLocalConnectionState() == LocalConnectionState.Stopped || GetLocalConnectionState() == LocalConnectionState.Stopping)
+                return;
+            
+            foreach (var kvp in _SendQueue)
+            {
+                SendMessages(kvp.Key, kvp.Value);
             }
         }
     }
