@@ -79,7 +79,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         private readonly Dictionary<int, BatchedReceiveQueue> _reliableRecieveQueue = new();
         #endregion
 
-        private void Dispose()
+        protected void Dispose()
         {
             foreach (var queue in _SendQueue.Values)
             {

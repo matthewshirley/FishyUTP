@@ -101,6 +101,8 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 Driver.Dispose();
                 Driver = default;
             }
+            
+            Dispose();
 
             SetLocalConnectionState(LocalConnectionState.Stopped, true);
             return true;

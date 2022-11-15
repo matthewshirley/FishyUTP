@@ -92,13 +92,15 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 _connection = default;
             }
             
-            // Driver.ScheduleUpdate().Complete();
+            Driver.ScheduleUpdate().Complete();
 
             if (Driver.IsCreated)
             {
                 Driver.Dispose();
                 Driver = default;
             }
+            
+            Dispose();
 
             SetLocalConnectionState(LocalConnectionState.Stopped, false);
             return true;
