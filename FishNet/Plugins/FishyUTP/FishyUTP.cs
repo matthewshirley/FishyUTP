@@ -197,7 +197,14 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="server">True to process data received on the server.</param>
         public override void IterateOutgoing(bool server)
         {
-            // Not yet implemented for FishyUTP
+            if (server)
+            {
+                _server.IterateOutgoing();
+            }
+            else
+            {
+                _client.IterateOutgoing();
+            }
         }
         #endregion
 
@@ -206,6 +213,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// Called when client receives data.
         /// </summary>
         public override event Action<ClientReceivedDataArgs> OnClientReceivedData;
+        
         /// <summary>
         /// Handles a ClientReceivedDataArgs.
         /// </summary>
@@ -214,10 +222,12 @@ namespace FishNet.Transporting.FishyUTPPlugin
         {
             OnClientReceivedData?.Invoke(receivedDataArgs);
         }
+        
         /// <summary>
         /// Called when server receives data.
         /// </summary>
         public override event Action<ServerReceivedDataArgs> OnServerReceivedData;
+        
         /// <summary>
         /// Handles a ClientReceivedDataArgs.
         /// </summary>

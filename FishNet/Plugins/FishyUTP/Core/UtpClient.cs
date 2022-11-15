@@ -14,9 +14,10 @@ namespace FishNet.Transporting.FishyUTPPlugin
             StopConnection();
         }
 
-        #region Private
+        /// <summary>
+        /// The current transport connection for the local client.
+        /// </summary>
         private NetworkConnection _connection;
-        #endregion
 
         private void InternalStartConnection(NetworkEndPoint endpoint, NetworkSettings settings)
         {
@@ -98,6 +99,8 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 Driver.Dispose();
                 Driver = default;
             }
+            
+            Dispose();
 
             SetLocalConnectionState(LocalConnectionState.Stopped, false);
             return true;
@@ -112,7 +115,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 return;
             
             Driver.ScheduleUpdate().Complete();
-            
+
             NetworkEvent.Type incomingEvent;
             while ((incomingEvent = _connection.PopEvent(Driver, out var stream, out var pipeline)) !=
                    NetworkEvent.Type.Empty)
@@ -120,8 +123,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 switch (incomingEvent)
                 {
                     case NetworkEvent.Type.Data:
-                        Receive(stream, _connection, pipeline, out var data, out var channel, out _);
-                        Transport.HandleClientReceivedDataArgs(new ClientReceivedDataArgs(data, channel, Transport.Index));
+                        Receive(_connection.GetHashCode(), pipeline, stream, false);
                         break;
                     case NetworkEvent.Type.Connect:
                         SetLocalConnectionState(LocalConnectionState.Started, false);
@@ -132,19 +134,26 @@ namespace FishNet.Transporting.FishyUTPPlugin
                 }
             }
         }
-
+        
         /// <summary>
         /// Sends a packet to the server.
         /// </summary>
         internal void SendToServer(byte channelId, ArraySegment<byte> segment)
         {
-            if (GetLocalConnectionState() != LocalConnectionState.Started || !_connection.IsCreated)
+            if (GetLocalConnectionState() != LocalConnectionState.Started)
             {
                 return;
             }
             
-            var pipeline = channelId == (int) Channel.Reliable ? ReliablePipeline : UnreliablePipeline;
-            Send(pipeline, _connection, segment);
+            Send(channelId, segment, _connection);
+        }
+        
+        internal void IterateOutgoing()
+        {
+            foreach (var kvp in _SendQueue)
+            {
+                SendMessages(kvp.Key, kvp.Value);
+            }
         }
     }
 }

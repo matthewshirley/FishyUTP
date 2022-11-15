@@ -1,12 +1,34 @@
 ﻿using System;
-using Unity.Collections;
+using System.Collections.Generic;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Error;
 
 namespace FishNet.Transporting.FishyUTPPlugin
 {
+    public struct SendTarget : IEquatable<SendTarget>
+    {
+        public readonly NetworkConnection Connection;
+        public readonly NetworkPipeline Pipeline;
+
+        public SendTarget(NetworkConnection connection, NetworkPipeline pipeline)
+        {
+            Connection = connection;
+            Pipeline = pipeline;
+        }
+
+        public bool Equals(SendTarget other)
+        {
+            return Connection.Equals(other.Connection) && Pipeline.Equals(other.Pipeline);
+        }
+    }
+    
     public abstract class CommonSocket
     {
+        ~CommonSocket()
+        {
+            Dispose();
+        }
+        
         /// <summary>
         /// Transport controlling this socket.
         /// </summary>
@@ -44,7 +66,28 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// </summary>
         protected NetworkPipeline UnreliablePipeline;
         #endregion
-        
+
+        #region Queues
+        /// <summary>
+        /// SendQueue dictionary is used to batch events instead of sending them immediately.
+        /// </summary>
+        protected readonly Dictionary<SendTarget, BatchedSendQueue> _SendQueue = new();
+
+        /// <summary>
+        /// SendQueue dictionary is used to batch events instead of sending them immediately.
+        /// </summary>
+        private readonly Dictionary<int, BatchedReceiveQueue> _reliableRecieveQueue = new();
+        #endregion
+
+        protected void Dispose()
+        {
+            foreach (var queue in _SendQueue.Values)
+            {
+                queue.Dispose();
+            }
+            
+            _SendQueue.Clear();
+        }
         
         /// <summary>
         /// Initializes this for use.
@@ -52,7 +95,7 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="transport"></param>
         internal void Initialize(FishyUTP transport)
         {
-            this.Transport = transport;
+            Transport = transport;
         }
         
         /// <summary>
@@ -62,7 +105,6 @@ namespace FishNet.Transporting.FishyUTPPlugin
         /// <param name="server"></param>
         protected void SetLocalConnectionState(LocalConnectionState connectionState, bool server)
         {
-            //If state hasn't changed.
             if (connectionState == _connectionState)
                 return;
 
@@ -77,37 +119,93 @@ namespace FishNet.Transporting.FishyUTPPlugin
         }
 
         /// <summary>
-        /// Sends a message via the transport
+        /// Queue a message to be sent via the transport
         /// </summary>
-        protected void Send(NetworkPipeline pipeline, NetworkConnection connection, ArraySegment<byte> segment)
+        protected void Send(int channelId, ArraySegment<byte> message, NetworkConnection connection)
         {
-            var data = new NativeArray<byte>(segment.Count, Allocator.Persistent);
-            NativeArray<byte>.Copy(segment.Array, segment.Offset, data, 0, segment.Count);
+            if (GetLocalConnectionState() != LocalConnectionState.Started)
+                return;
             
-            var writeStatus = Driver.BeginSend(pipeline, connection, out var writer);
+            var pipeline = channelId == (int) Channel.Reliable ? ReliablePipeline : UnreliablePipeline;
+            var target = new SendTarget(connection, pipeline);
 
-            //If endpoint was success, write data to stream
-            if (writeStatus != (int)StatusCode.Success) return;
+            if (!_SendQueue.TryGetValue(target, out var queue))
+            {
+                // The maximum reliable throughput, assuming the full reliable window can be sent on every
+                // tick. This will be a large over-estimation in any realistic scenario.
+                var maxReliableThroughput = (NetworkParameterConstants.MTU * Transport.NetworkManager.TimeManager.TickRate * 32) / 1000;
+                var maxCapacity = NetworkParameterConstants.DisconnectTimeoutMS * maxReliableThroughput;
+
+                queue = new BatchedSendQueue(maxCapacity);
+                _SendQueue.Add(target, queue);
+            }
+
+            queue.PushMessage(message);
+        }
+        
+        /// <summary>
+        /// Send all queued messages
+        /// </summary>
+        protected void SendMessages(SendTarget target, BatchedSendQueue queue)
+        {
+            var pipeline = target.Pipeline;
+            var connection = target.Connection;
             
-            writer.WriteBytes(data);
-            Driver.EndSend(writer);
-
-            data.Dispose();
+            while (!queue.IsEmpty)
+            {
+                var status = Driver.BeginSend(pipeline, connection, out var writer);
+                if (status != (int)StatusCode.Success) return;
+                
+                var sendSize = pipeline == ReliablePipeline ?  queue.FillWriterWithBytes(ref writer) : queue.FillWriterWithMessages(ref writer);
+                Driver.EndSend(writer);
+                
+                queue.Consume(sendSize);
+            }
         }
         
         /// <summary>
         /// Returns a message from the transport
         /// </summary>
-        protected void Receive(DataStreamReader stream, NetworkConnection connection, NetworkPipeline pipeline, out ArraySegment<byte> data, out Channel channel, out int connectionId)
+        protected void Receive(int connectionId, NetworkPipeline pipeline, DataStreamReader reader, bool server = true)
         {
-            NativeArray<byte> nativeMessage = new NativeArray<byte>(stream.Length, Allocator.Temp);
-            stream.ReadBytes(nativeMessage);
-            
-            data = new ArraySegment<byte>(nativeMessage.ToArray());
-            connectionId = connection.GetHashCode();
-            channel = pipeline == ReliablePipeline ? Channel.Reliable : Channel.Unreliable;
+            BatchedReceiveQueue queue;
+            if (pipeline == ReliablePipeline)
+            {
+                if (_reliableRecieveQueue.TryGetValue(connectionId, out queue))
+                {
+                    queue.PushReader(reader);
+                }
+                else
+                {
+                    queue = new BatchedReceiveQueue(reader);
+                    _reliableRecieveQueue[connectionId] = queue;
+                }
+            }
+            else
+            {
+                queue = new BatchedReceiveQueue(reader);
+            }
 
-            nativeMessage.Dispose();
+            while (!queue.IsEmpty)
+            {
+                var message = queue.PopMessage();
+                if (message == default)
+                {
+                    break;
+                }
+                
+                var channel = pipeline == ReliablePipeline ? Channel.Reliable : Channel.Unreliable;
+
+                if (server)
+                {
+                    Transport.HandleServerReceivedDataArgs(new ServerReceivedDataArgs(message, channel, connectionId, Transport.Index));
+
+                }
+                else
+                {
+                    Transport.HandleClientReceivedDataArgs(new ClientReceivedDataArgs(message, channel, Transport.Index));
+                }
+            }
         }
 
         /// <summary>
